@@ -82,14 +82,14 @@ tone: concise
 ```json
 {
   "SYSTEM": {
-    "$type": "text",
-    "$content": "你是一个严谨助手。",
-    "$order": 0
+    "type": "text",
+    "content": "你是一个严谨助手。",
+    "order": 0
   },
   "CONFIG": {
-    "$type": "yaml",
-    "$content": "lang: zh-CN\ntone: concise",
-    "$order": 1
+    "type": "yaml",
+    "content": "lang: zh-CN\ntone: concise",
+    "order": 1
   }
 }
 ```

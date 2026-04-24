@@ -83,14 +83,14 @@ Path tree model:
 ```json
 {
   "SYSTEM": {
-    "$type": "text",
-    "$content": "You are a rigorous assistant.",
-    "$order": 0
+    "type": "text",
+    "content": "You are a rigorous assistant.",
+    "order": 0
   },
   "CONFIG": {
-    "$type": "yaml",
-    "$content": "lang: en\ntone: concise",
-    "$order": 1
+    "type": "yaml",
+    "content": "lang: en\ntone: concise",
+    "order": 1
   }
 }
 ```
