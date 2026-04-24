@@ -30,7 +30,7 @@ Its goal is not to replace JSON, YAML, or Markdown. Instead, it acts as a thin e
 1. split long text into named blocks
 2. attach an optional type to each body
 3. preserve the body as raw text during parsing
-4. keep the document readable for both humans and programs
+4. make the document readable for humans and stable for programs and LLM systems to process
 
 PML is especially useful for prompt templates, agent payloads, and documents that need “split first, interpret later”.
 

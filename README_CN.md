@@ -4,15 +4,31 @@
 
 > 面向 LLM、提示词工程与结构化文本拼接的轻量块格式
 
+作为正式名称，PML 可以理解为 **Prompt Meta Language**。
+
+同时，它也保留了一点有意为之的开放语义，例如：
+- **Peer as a Markup Language**
+- **Patchwork Mosaic Language**
+- **Prompt Modular Language**
+- **PML forMat Language**
+
+这种模糊不是缺陷，而是设计的一部分。
+
 PML 是一种把异构文本稳定装进同一份文档的块式格式。
 它不取代 JSON、YAML 或 Markdown，而是给这些内容提供清晰的外层边界。
+让一份文档既适合人类读，也适合程序和 LLM AI 稳定处理。
 
 它适合一份文件里同时承载这些内容：
 
 - system prompt
 - user input
 - 配置片段
-- JSON、YAML、Markdown、纯文本
+- JSON、YAML、Markdown、纯文本等等
+- 甚至是另一个 PML 格式
+
+另一个作用是如果你使用 PML 来编写README或配置文件，它甚至可以直接充当具有大量注释说明的配置文件
+
+> PML 不只是一个“数据格式”，更是一种用来组织可提示、可分层、可混合文本内容的格式(包括混合 PML 自身)。
 
 ## 它解决什么问题
 
@@ -78,17 +94,9 @@ tone: concise
 }
 ```
 
-## 仓库内容
+## 例子片段
 
-- [PML-format-spec_CN.md](./PML-format-spec_CN.md)
-- [PML-format-spec.md](./PML-format-spec.md)
-- [pml.rs](./pml.rs)
-- [pml.py](./pml.py)
-- [pml.js](./pml.js)
-- [Pml.java](./Pml.java)
-- [LICENSE](./LICENSE)
-
-## 建议片段
+这里只是单文件无依赖的简单实现，方便简单使用，并非最佳实现和性能。
 
 ### Rust
 

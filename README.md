@@ -4,15 +4,32 @@
 
 [中文说明](./README_CN.md) | [English Spec](./PML-format-spec.md) | [中文规范](./PML-format-spec_CN.md)
 
+PML can formally be read as **Prompt Meta Language**.
+
+It also keeps some intentionally open-ended interpretations, such as:
+
+- **Peer as a Markup Language**
+- **Patchwork Mosaic Language**
+- **Prompt Modular Language**
+- **PML forMat Language**
+
+That ambiguity is part of the design.
+
 PML is a block-oriented text format for packaging heterogeneous content into one stable document.
 It does not replace JSON, YAML, or Markdown. It gives them a clear outer boundary.
+It makes a document readable for humans and stable for programs and LLM systems to process.
 
 PML is useful when one file needs to carry things like:
 
 - system prompts
 - user input
 - config fragments
-- JSON, YAML, Markdown, or plain text
+- JSON, YAML, Markdown, plain text, and more
+- even another PML document
+
+Another useful property is that a README or config file written in PML can also serve directly as a configuration file with extensive inline annotations.
+
+> PML is not just a "data format". It is also a format for organizing prompt-ready, layered, and mixed text content, including PML itself.
 
 ## What It Solves
 
@@ -78,17 +95,10 @@ Path tree model:
 }
 ```
 
-## Repository Contents
+## Example Snippets
 
-- [PML-format-spec.md](./PML-format-spec.md)
-- [PML-format-spec_CN.md](./PML-format-spec_CN.md)
-- [pml.rs](./pml.rs)
-- [pml.py](./pml.py)
-- [pml.js](./pml.js)
-- [Pml.java](./Pml.java)
-- [LICENSE](./LICENSE)
-
-## Suggested Snippets
+These are simple single-file, dependency-free implementations for convenient use.
+They are not intended as the best implementation or the highest-performance version.
 
 ### Rust
 
