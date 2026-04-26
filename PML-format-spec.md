@@ -50,7 +50,7 @@ After parsing, you can first think of it as this path tree model sketch:
 ```json
 {
   "SYSTEM": {
-    "type": "text",
+    "type": "",
     "content": "You are a rigorous assistant."
   },
   "CONFIG": {
@@ -88,16 +88,22 @@ PML does not automatically project them into objects, arrays, or a chapter tree.
 
 ### 4.1 Opening Block
 
+The basic opening header structure is:
+
 ```text
-[NAME]
 [NAME:TYPE]
 ```
 
+`:TYPE` is an optional format hint.
+If `:TYPE` is omitted, the parser records the type field as an empty string.
+PML does not parse the body by `TYPE`; the body is always preserved as a raw string first.
+
 ### 4.2 Closing Block
+
+The basic closing header structure is:
 
 ```text
 [/NAME]
-[/NAME:TYPE]
 ```
 
 Closing blocks are optional.
@@ -109,13 +115,7 @@ They are only needed when the author wants an explicit boundary.
 It is recommended to use uppercase or clear title-style naming.
 It may contain dot segments and may end with a `#...` suffix.
 
-Short regex approximation:
-
-```text
-[A-Za-z0-9_\u4e00-\u9fff]+(\.[A-Za-z0-9_\u4e00-\u9fff]+)*
-```
-
-Full name approximation:
+Name regex approximation:
 
 ```text
 [A-Za-z0-9_\u4e00-\u9fff]+(\.[A-Za-z0-9_\u4e00-\u9fff]+)*(#[A-Za-z0-9_\u4e00-\u9fff]+)?
@@ -168,7 +168,7 @@ Otherwise, the short regex above is a practical approximation.
 
 Rules:
 
-1. If omitted, the default type is `text`
+1. `:TYPE` in the opening header may be omitted
 2. Type matching is case-insensitive
 3. Normalize to lowercase before comparing
 4. The only built-in alias is `md = markdown`
@@ -176,33 +176,30 @@ Rules:
 6. `TYPE` may only contain ASCII letters, digits, `_`, and `-`
 
 Recommended naming style: lowercase.
+For semantically obvious content, omitting the type usually does not hurt human or LLM understanding.
+When parsed into a programmatic model, a missing type is recorded as an empty string.
+When the document is read by LLMs or rendered by tools, writing `:TYPE` is still recommended.
+
 Common examples: `text`, `markdown`, `json`, `yaml`, `toml`, `ini`, `prompt-template`
 
-## 5. Two Block Shapes
+## 5. Blocks and Boundaries
 
-PML has two block shapes:
+PML has one basic block structure: opening header plus body.
 
-1. short block
-2. paired block
+```text
+[NAME]
+body
+```
 
-### 5.1 Short Block
+The end boundary can be determined in two ways:
 
-A short block has only an opening header.
+1. implicit boundary: when no matching closing block exists, the body ends at the next legal opening header or EOF
+2. explicit boundary: when a matching closing block `[/NAME]` exists, the body ends before that closing block
 
-Its body starts on the next line and ends at:
-
-1. the next legal opening header
-2. or EOF
-
-The separator newline before the boundary does not belong to the body.
-
-### 5.2 Paired Block
-
-A paired block has both an opening header and a matching closing header.
-
-Its body starts on the next line and ends before the matching closing header.
-
-The separator newline before the closing header does not belong to the body.
+Explicit boundaries have priority over implicit boundaries.
+That means after reading an opening header, the parser first looks for a matching `[/NAME]`.
+If found, everything between the opening and closing headers is body content; other PML-like lines inside that body do not participate in current-layer parsing.
+If not found, the parser uses the implicit boundary.
 
 ## 6. Parsing Rules
 
@@ -282,21 +279,20 @@ If the file ends after the blank line, the body is `hello\n`.
 
 This rule applies to all body types.
 
-### 6.3 Paired Blocks Have Priority
+### 6.3 Explicit Boundaries Have Priority
 
-If a matching closing block exists, the opening block is parsed as a paired block and consumes the entire middle section.
+If a matching closing block exists, the block uses an explicit boundary and consumes the entire middle section.
 
-### 6.4 No Matching Close Means Short Block
+### 6.4 No Matching Close Means Implicit Boundary
 
-If no matching closing block is found, the block is treated as a short block and ends at the next legal opening header or EOF.
+If no matching closing block is found, the block uses an implicit boundary and ends at the next legal opening header or EOF.
 
 ### 6.5 Closing Block Match Rules
 
-Three rules:
+Two rules:
 
 1. `NAME` must match exactly
-2. if the closing block includes `TYPE`, it must match the normalized opening type
-3. if the closing block omits `TYPE`, the type is not checked
+2. closing blocks do not include `TYPE`
 
 ### 6.6 `#...` Also Participates in Matching
 
@@ -336,24 +332,26 @@ These cases should error:
 1. invalid opening headers such as `[A key="value"]`
 2. invalid closing headers such as `[/A extra]`
 3. stray closing blocks such as `[/A]`
-4. type mismatch such as `[A:yaml] ... [/A:json]`
+4. closing blocks with type such as `[A:yaml] ... [/A:yaml]`
 5. name mismatch such as `[A#x] ... [/A#y]`
 
 ## 11. Recommended Writing Style
 
-1. Use short blocks for normal text.
-2. Use paired blocks when the body may contain PML-like lines.
-3. Use `#...` on the name when boundaries may conflict.
-4. Treat the body format as `markdown`, `yaml`, `json`, or a custom type as needed.
+1. Ordinary body text may use implicit boundaries.
+2. Use explicit boundaries when the body may contain standalone bracket lines or PML-like lines.
+3. The opening header structure is `[NAME:TYPE]`, where `:TYPE` may be omitted.
+4. Write `:TYPE` when LLMs or tools need to recognize the body format.
+5. Use `#...` on the outer name when boundaries may conflict.
+6. Put data in the body; its format may be `markdown`, `yaml`, `json`, or a custom type.
 
 ## 12. Reference Parse Flow
 
 1. Scan the document line by line.
 2. Recognize legal opening headers.
-3. Normalize the type: fill in `text`, lowercase it, and map `md` to `markdown`.
+3. Normalize the type: fill in an empty string when omitted, lowercase it, and map `md` to `markdown`.
 4. Determine the body end boundary: matching close, next legal opening header, or EOF.
 5. Take the body lines and exclude the separator newline before the boundary.
-6. If paired validation is needed, search forward for a matching close.
+6. If a name-matching close is found, use an explicit boundary; otherwise use an implicit boundary.
 
 ## 13. Non-Goals
 
@@ -368,17 +366,16 @@ PML does not try to provide:
 
 ## 14. Summary
 
-PML can be summarized in nine rules:
+PML can be summarized in eight rules:
 
 1. documents are ordered block sequences
-2. opening headers are `[NAME]` or `[NAME:TYPE]`
-3. closing headers are `[/NAME]` or `[/NAME:TYPE]`
+2. the opening header structure is `[NAME:TYPE]`, where `:TYPE` may be omitted
+3. closing headers are `[/NAME]` and do not include type
 4. names may include segments and `#...`
 5. parsing is one layer at a time
 6. bodies are returned as raw strings first
 7. the separator newline before the boundary is not part of the body
-8. closing `TYPE` is optional validation
-9. PML is strict and does not define body escaping
+8. PML is strict and does not define body escaping
 
 PML is suited for prompt templates, structured text envelopes, intermediate payloads, and text composition.
 
@@ -391,11 +388,11 @@ You need to understand a lightweight block format called PML.
 
 Rules:
 1. The document is an ordered sequence of blocks.
-2. Opening headers are [NAME] or [NAME:TYPE]. If TYPE is omitted, the default is text.
-3. Optional closing headers are [/NAME] or [/NAME:TYPE].
-4. If a matching close exists, the block is paired; otherwise it is short.
-5. If the close omits TYPE, type is not checked. If it includes TYPE, it must match.
-6. The body is always understood as raw text first.
+2. The opening header structure is [NAME:TYPE], where :TYPE may be omitted.
+3. Optional closing headers are [/NAME].
+4. If a matching close exists, the body is everything between the opening and closing headers.
+5. If no matching close exists, the body ends at the next opening header or EOF.
+6. TYPE may be any hint such as json or yaml; the body is preserved as raw text first.
 
 Summary:
 Treat PML as an ordered block list.
@@ -413,18 +410,17 @@ PML outputs an ordered block list, not a tree.
 PML can carry another PML document inside a body, but that is a separate layer of interpretation.
 
 Syntax:
-1. Opening headers are [NAME] or [NAME:TYPE]. If TYPE is omitted, the default is text.
-2. Optional closing headers are [/NAME] or [/NAME:TYPE].
+1. The opening header structure is [NAME:TYPE], where :TYPE may be omitted.
+2. Optional closing headers are [/NAME].
 3. NAME may include dot segments and a #... suffix, e.g. A.B, A.1, A#outer.
 4. Type matching is case-insensitive; md is normalized to markdown.
+5. The body is preserved as raw text first, and callers may interpret it by TYPE later.
 
 Parsing:
 1. Control lines must stand alone on their own lines.
-2. If a matching close exists, parse as a paired block and consume the whole middle section.
-3. If no matching close exists, parse as a short block until the next legal opening header or EOF.
+2. If a matching close exists, use an explicit boundary and consume the whole middle section.
+3. If no matching close exists, use an implicit boundary until the next legal opening header or EOF.
 4. Closing NAME must match exactly, including segments and # suffix.
-5. If a closing TYPE exists, it must match the normalized opening type.
-6. If a closing TYPE is omitted, the type is not checked.
 
 About #:
 1. You can treat #... as part of the name.
@@ -468,7 +464,7 @@ A recommended shape is:
   "blocks": [
     {
       "name": "SYSTEM",
-      "type": "text",
+      "type": "",
       "content": "You are a rigorous assistant."
     },
     {
@@ -518,11 +514,11 @@ child
 ```json
 {
   "A": {
-    "type": "text",
+    "type": "",
     "content": "root",
     "order": 0,
     "B": {
-      "type": "text",
+      "type": "",
       "content": "child",
       "order": 1
     }
@@ -577,14 +573,14 @@ can be interpreted as:
   "A": [
     {
       "1": {
-        "type": "text",
+        "type": "",
         "content": "x",
         "order": 0
       }
     },
     {
       "2": {
-        "type": "text",
+        "type": "",
         "content": "y",
         "order": 1
       }

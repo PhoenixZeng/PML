@@ -1,6 +1,6 @@
 # PML
 
-[English README](./README.md) | [中文规范](./PML-format-spec_CN.md) | [English Spec](./PML-format-spec.md)
+[English README](./README.md) | [中文规范](./PML-format-spec_CN.md) | [English Spec](./PML-format-spec.md) | [形式语法（EBNF）](./PML-grammar.ebnf.md)
 
 > 面向 LLM、提示词工程与结构化文本拼接的轻量块格式
 
@@ -66,7 +66,7 @@ tone: concise
 [
   {
     "name": "SYSTEM",
-    "type": "text",
+    "type": "",
     "content": "你是一个严谨助手。"
   },
   {
@@ -82,7 +82,7 @@ tone: concise
 ```json
 {
   "SYSTEM": {
-    "type": "text",
+    "type": "",
     "content": "你是一个严谨助手。",
     "order": 0
   },
@@ -163,9 +163,9 @@ System.out.println(((Map<String, Object>) tree.get("SYSTEM")).get("$content"));
 
 ## 说明
 
-- 普通正文优先用短块。
-- 当正文里可能出现合法 PML 控制行时，优先用配对块。
-- 当边界可能冲突时，优先给块名加 `#...`。
+- 普通正文可以使用隐式边界。
+- 当正文里可能出现独占一行的方括号内容或合法 PML 控制行时，优先使用显式边界。
+- 当边界可能冲突时，优先给外层块名加 `#...`。
 - 详细语法和模型规则见规范文件。
 
 ## 许可证

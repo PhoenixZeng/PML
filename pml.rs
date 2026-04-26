@@ -52,7 +52,6 @@ pub enum PmlErrorKind {
     InvalidName(String),
     InvalidType(String),
     StrayClosingBlock(String),
-    TypeMismatch { expected: String, found: String },
     MetaFieldConflict(String),
     InvalidTree(String),
 }
@@ -60,7 +59,7 @@ pub enum PmlErrorKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Control {
     Open { name: String, ty: String },
-    Close { name: String, ty: Option<String> },
+    Close { name: String },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -103,11 +102,6 @@ impl fmt::Display for PmlError {
             PmlErrorKind::StrayClosingBlock(name) => {
                 write!(f, "line {}: stray closing block `/{}`", self.line, name)
             }
-            PmlErrorKind::TypeMismatch { expected, found } => write!(
-                f,
-                "line {}: closing type `{}` does not match opening type `{}`",
-                self.line, found, expected
-            ),
             PmlErrorKind::MetaFieldConflict(name) => {
                 write!(
                     f,
@@ -144,14 +138,14 @@ pub fn parse_pml(input: &str) -> Result<Vec<PmlBlock>, PmlError> {
                     kind: PmlErrorKind::ExpectedBlockHeader,
                 });
             }
-            Some(Control::Close { name, .. }) => {
+            Some(Control::Close { name }) => {
                 return Err(PmlError {
                     line: i + 1,
                     kind: PmlErrorKind::StrayClosingBlock(name),
                 });
             }
             Some(Control::Open { name, ty }) => {
-                let close = find_matching_close(&input, &lines, i + 1, &name, &ty)?;
+                let close = find_matching_close(&input, &lines, i + 1, &name)?;
 
                 if let Some(close_idx) = close {
                     blocks.push(PmlBlock {
@@ -162,7 +156,7 @@ pub fn parse_pml(input: &str) -> Result<Vec<PmlBlock>, PmlError> {
                     });
                     i = close_idx + 1;
                 } else {
-                    let end = find_next_opening(&input, &lines, i + 1);
+                    let end = find_next_opening(&input, &lines, i + 1)?;
                     blocks.push(PmlBlock {
                         name,
                         ty,
@@ -283,7 +277,7 @@ impl PmlBuilder {
             });
         }
 
-        let ty = normalize_type(ty.unwrap_or("text")).map_err(|kind| PmlError { line: 0, kind })?;
+        let ty = normalize_type(ty.unwrap_or("")).map_err(|kind| PmlError { line: 0, kind })?;
         self.blocks.push(PmlBlock {
             name,
             ty,
@@ -306,7 +300,7 @@ pub fn render_blocks(blocks: &[PmlBlock]) -> String {
     for block in blocks {
         out.push('[');
         out.push_str(&block.name);
-        if block.ty != "text" {
+        if !block.ty.is_empty() {
             out.push(':');
             out.push_str(&block.ty);
         }
@@ -369,47 +363,29 @@ fn find_matching_close(
     lines: &[Line],
     start: usize,
     name: &str,
-    ty: &str,
 ) -> Result<Option<usize>, PmlError> {
     for idx in start..lines.len() {
         let line = line_text(input, lines[idx]);
-        if let Ok(Some(Control::Close {
-            name: close_name,
-            ty: close_ty,
-        })) = parse_control_line(line, idx + 1)
-        {
-            if close_name == name {
-                if let Some(close_ty) = close_ty {
-                    if close_ty != ty {
-                        return Err(PmlError {
-                            line: idx + 1,
-                            kind: PmlErrorKind::TypeMismatch {
-                                expected: ty.to_string(),
-                                found: close_ty,
-                            },
-                        });
-                    }
-                }
+        match parse_control_line(line, idx + 1)? {
+            Some(Control::Close { name: close_name }) if close_name == name => {
                 return Ok(Some(idx));
             }
+            _ => {}
         }
     }
 
     Ok(None)
 }
 
-fn find_next_opening(input: &str, lines: &[Line], start: usize) -> usize {
+fn find_next_opening(input: &str, lines: &[Line], start: usize) -> Result<usize, PmlError> {
     for idx in start..lines.len() {
         let line = line_text(input, lines[idx]);
-        if matches!(
-            parse_control_line(line, idx + 1),
-            Ok(Some(Control::Open { .. }))
-        ) {
-            return idx;
+        if matches!(parse_control_line(line, idx + 1)?, Some(Control::Open { .. })) {
+            return Ok(idx);
         }
     }
 
-    lines.len()
+    Ok(lines.len())
 }
 
 fn parse_control_line(line: &str, line_no: usize) -> Result<Option<Control>, PmlError> {
@@ -433,8 +409,8 @@ fn parse_control_line(line: &str, line_no: usize) -> Result<Option<Control>, Pml
     }
 
     if let Some(rest) = inner.strip_prefix('/') {
-        let (name, ty) = parse_name_and_optional_type(rest, line_no)?;
-        Ok(Some(Control::Close { name, ty }))
+        let name = parse_closing_name(rest, line_no, line)?;
+        Ok(Some(Control::Close { name }))
     } else {
         let (name, ty) = parse_name_and_required_type(inner, line_no)?;
         Ok(Some(Control::Open { name, ty }))
@@ -463,7 +439,7 @@ fn content_has_control_line(content: &str) -> bool {
 fn parse_name_and_required_type(input: &str, line_no: usize) -> Result<(String, String), PmlError> {
     let (name, ty) = match input.split_once(':') {
         Some((name, ty)) => (name, ty),
-        None => (input, "text"),
+        None => (input, ""),
     };
 
     validate_name_or_err(name, line_no)?;
@@ -475,25 +451,15 @@ fn parse_name_and_required_type(input: &str, line_no: usize) -> Result<(String, 
     Ok((name.to_string(), ty))
 }
 
-fn parse_name_and_optional_type(
-    input: &str,
-    line_no: usize,
-) -> Result<(String, Option<String>), PmlError> {
-    let (name, ty) = match input.split_once(':') {
-        Some((name, ty)) => (name, Some(ty)),
-        None => (input, None),
-    };
-
-    validate_name_or_err(name, line_no)?;
-    let ty = match ty {
-        Some(ty) => Some(normalize_type(ty).map_err(|kind| PmlError {
+fn parse_closing_name(input: &str, line_no: usize, line: &str) -> Result<String, PmlError> {
+    if input.contains(':') {
+        return Err(PmlError {
             line: line_no,
-            kind,
-        })?),
-        None => None,
-    };
-
-    Ok((name.to_string(), ty))
+            kind: PmlErrorKind::InvalidControlLine(line.to_string()),
+        });
+    }
+    validate_name_or_err(input, line_no)?;
+    Ok(input.to_string())
 }
 
 fn validate_name_or_err(name: &str, line_no: usize) -> Result<(), PmlError> {
@@ -508,7 +474,10 @@ fn validate_name_or_err(name: &str, line_no: usize) -> Result<(), PmlError> {
 }
 
 fn normalize_type(ty: &str) -> Result<String, PmlErrorKind> {
-    if ty.is_empty() || !ty.chars().all(is_type_char) {
+    if ty.is_empty() {
+        return Ok(String::new());
+    }
+    if !ty.chars().all(is_type_char) {
         return Err(PmlErrorKind::InvalidType(ty.to_string()));
     }
 
@@ -980,7 +949,7 @@ fn collect_blocks_from_object(
             };
             validate_name_or_err(&name, 0)?;
 
-            let ty = normalize_type(meta.ty.as_deref().unwrap_or("text"))
+            let ty = normalize_type(meta.ty.as_deref().unwrap_or(""))
                 .map_err(|kind| PmlError { line: 0, kind })?;
             let content = normalize_newlines(meta.content.as_deref().unwrap_or(""));
             output.push(CollectedBlock {

@@ -2,7 +2,7 @@
 
 > A lightweight block format for LLM workflows, prompt engineering, and structured text composition
 
-[中文说明](./README_CN.md) | [English Spec](./PML-format-spec.md) | [中文规范](./PML-format-spec_CN.md)
+[中文说明](./README_CN.md) | [English Spec](./PML-format-spec.md) | [中文规范](./PML-format-spec_CN.md) | [Grammar (EBNF)](./PML-grammar.ebnf.md)
 
 PML can formally be read as **Prompt Meta Language**.
 
@@ -67,7 +67,7 @@ Block sequence model:
 [
   {
     "name": "SYSTEM",
-    "type": "text",
+    "type": "",
     "content": "You are a rigorous assistant."
   },
   {
@@ -83,7 +83,7 @@ Path tree model:
 ```json
 {
   "SYSTEM": {
-    "type": "text",
+    "type": "",
     "content": "You are a rigorous assistant.",
     "order": 0
   },
@@ -165,9 +165,9 @@ System.out.println(((Map<String, Object>) tree.get("SYSTEM")).get("$content"));
 
 ## Notes
 
-- Prefer short blocks for ordinary content.
-- Prefer paired blocks when the body may contain legal PML control lines.
-- Use `#...` on names when boundaries may conflict.
+- Ordinary body text may use implicit boundaries.
+- Use explicit boundaries when the body may contain standalone bracket lines or legal PML control lines.
+- Use `#...` on outer names when boundaries may conflict.
 - The full grammar and model rules are in the spec files.
 
 ## License

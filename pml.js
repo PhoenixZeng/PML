@@ -26,7 +26,6 @@ const PmlErrorKind = Object.freeze({
   INVALID_NAME: "invalid_name",
   INVALID_TYPE: "invalid_type",
   STRAY_CLOSING_BLOCK: "stray_closing_block",
-  TYPE_MISMATCH: "type_mismatch",
   META_FIELD_CONFLICT: "meta_field_conflict",
   INVALID_TREE: "invalid_tree",
 });
@@ -54,8 +53,6 @@ class PmlError extends Error {
         return `line ${this.line}: invalid block type \`${this.detail}\``;
       case PmlErrorKind.STRAY_CLOSING_BLOCK:
         return `line ${this.line}: stray closing block \`/${this.detail}\``;
-      case PmlErrorKind.TYPE_MISMATCH:
-        return `line ${this.line}: closing type \`${this.found}\` does not match opening type \`${this.expected}\``;
       case PmlErrorKind.META_FIELD_CONFLICT:
         return `line ${this.line}: tree meta field conflicts with child key \`${this.detail}\``;
       case PmlErrorKind.INVALID_TREE:
@@ -88,7 +85,7 @@ class PmlBuilder {
       throw new PmlError(0, PmlErrorKind.INVALID_NAME, name);
     }
     this.blocks.push(
-      new PmlBlock(name, normalizeType(type ?? "text"), normalizeNewlines(content), paired),
+      new PmlBlock(name, normalizeType(type ?? ""), normalizeNewlines(content), paired),
     );
     return this;
   }
@@ -115,7 +112,7 @@ function parsePml(input) {
       throw new PmlError(i + 1, PmlErrorKind.STRAY_CLOSING_BLOCK, control.name);
     }
 
-    const closeIndex = findMatchingClose(text, lines, i + 1, control.name, control.ty);
+    const closeIndex = findMatchingClose(text, lines, i + 1, control.name);
     if (closeIndex !== null) {
       blocks.push(
         new PmlBlock(
@@ -189,7 +186,7 @@ function renderBlocks(blocks) {
   let out = "";
   for (const block of blocks) {
     out += `[${block.name}`;
-    if (block.ty !== "text") {
+    if (block.ty !== "") {
       out += `:${block.ty}`;
     }
     out += "]\n";
@@ -234,13 +231,10 @@ function contentBetween(text, lines, start, end) {
   return text.slice(lines[start].start, lines[end - 1].end);
 }
 
-function findMatchingClose(text, lines, start, name, ty) {
+function findMatchingClose(text, lines, start, name) {
   for (let idx = start; idx < lines.length; idx += 1) {
     const control = parseControlLine(lineText(text, lines[idx]), idx + 1);
     if (control && control.kind === "close" && control.name === name) {
-      if (control.ty !== null && control.ty !== ty) {
-        throw new PmlError(idx + 1, PmlErrorKind.TYPE_MISMATCH, "", ty, control.ty);
-      }
       return idx;
     }
   }
@@ -271,8 +265,8 @@ function parseControlLine(line, lineNo) {
   }
 
   if (inner.startsWith("/")) {
-    const [name, ty] = parseNameAndOptionalType(inner.slice(1), lineNo);
-    return { kind: "close", name, ty };
+    const name = parseClosingName(inner.slice(1), lineNo, line);
+    return { kind: "close", name, ty: null };
   }
 
   const [name, ty] = parseNameAndRequiredType(inner, lineNo);
@@ -302,21 +296,17 @@ function contentHasControlLine(content) {
 function parseNameAndRequiredType(value, lineNo) {
   const split = value.indexOf(":");
   const name = split >= 0 ? value.slice(0, split) : value;
-  const type = split >= 0 ? value.slice(split + 1) : "text";
+  const type = split >= 0 ? value.slice(split + 1) : "";
   validateNameOrThrow(name, lineNo);
   return [name, normalizeType(type, lineNo)];
 }
 
-function parseNameAndOptionalType(value, lineNo) {
-  const split = value.indexOf(":");
-  if (split >= 0) {
-    const name = value.slice(0, split);
-    const type = value.slice(split + 1);
-    validateNameOrThrow(name, lineNo);
-    return [name, normalizeType(type, lineNo)];
+function parseClosingName(value, lineNo, line) {
+  if (value.includes(":")) {
+    throw new PmlError(lineNo, PmlErrorKind.INVALID_CONTROL_LINE, line);
   }
   validateNameOrThrow(value, lineNo);
-  return [value, null];
+  return value;
 }
 
 function validateNameOrThrow(name, lineNo) {
@@ -326,7 +316,10 @@ function validateNameOrThrow(name, lineNo) {
 }
 
 function normalizeType(type, lineNo = 0) {
-  if (type.length === 0 || ![...type].every(isTypeChar)) {
+  if (type.length === 0) {
+    return "";
+  }
+  if (![...type].every(isTypeChar)) {
     throw new PmlError(lineNo, PmlErrorKind.INVALID_TYPE, type);
   }
   const normalized = type.toLowerCase();
@@ -559,7 +552,7 @@ function collectBlocksFromObject(object, isRoot, path, collected, state, options
       const baseName = path.join(".");
       const name = meta.tag === null ? baseName : `${baseName}#${meta.tag}`;
       validateNameOrThrow(name, 0);
-      const ty = normalizeType(meta.ty ?? "text");
+      const ty = normalizeType(meta.ty ?? "");
       const content = normalizeNewlines(meta.content ?? "");
       collected.push({
         block: new PmlBlock(name, ty, content, false),

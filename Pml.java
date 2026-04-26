@@ -44,7 +44,6 @@ public final class Pml {
         INVALID_NAME,
         INVALID_TYPE,
         STRAY_CLOSING_BLOCK,
-        TYPE_MISMATCH,
         META_FIELD_CONFLICT,
         INVALID_TREE
     }
@@ -80,7 +79,6 @@ public final class Pml {
                 case INVALID_NAME -> "line " + line + ": invalid block name `" + detail + "`";
                 case INVALID_TYPE -> "line " + line + ": invalid block type `" + detail + "`";
                 case STRAY_CLOSING_BLOCK -> "line " + line + ": stray closing block `/" + detail + "`";
-                case TYPE_MISMATCH -> "line " + line + ": closing type `" + found + "` does not match opening type `" + expected + "`";
                 case META_FIELD_CONFLICT -> "line " + line + ": tree meta field conflicts with child key `" + detail + "`";
                 case INVALID_TREE -> "line " + line + ": invalid PML tree: " + detail;
             };
@@ -106,7 +104,7 @@ public final class Pml {
             if (!isValidName(name)) {
                 throw new PmlError(0, PmlErrorKind.INVALID_NAME, name);
             }
-            String normalizedType = normalizeType(ty == null ? "text" : ty, 0);
+            String normalizedType = normalizeType(ty == null ? "" : ty, 0);
             blocks.add(new PmlBlock(name, normalizedType, normalizeNewlines(content), paired));
             return this;
         }
@@ -117,8 +115,6 @@ public final class Pml {
     private record Control(String kind, String name, String ty) {}
 
     private record NameAndType(String name, String ty) {}
-
-    private record NameAndOptionalType(String name, String ty) {}
 
     private record CollectedBlock(PmlBlock block, Integer order, int sequence) {}
 
@@ -147,7 +143,7 @@ public final class Pml {
                 throw new PmlError(i + 1, PmlErrorKind.STRAY_CLOSING_BLOCK, control.name());
             }
 
-            Integer closeIndex = findMatchingClose(text, lines, i + 1, control.name(), control.ty());
+            Integer closeIndex = findMatchingClose(text, lines, i + 1, control.name());
             if (closeIndex != null) {
                 blocks.add(new PmlBlock(
                     control.name(),
@@ -221,7 +217,7 @@ public final class Pml {
         StringBuilder out = new StringBuilder();
         for (PmlBlock block : blocks) {
             out.append('[').append(block.name);
-            if (!"text".equals(block.ty)) {
+            if (!block.ty.isEmpty()) {
                 out.append(':').append(block.ty);
             }
             out.append("]\n");
@@ -266,13 +262,10 @@ public final class Pml {
         return text.substring(lines.get(start).start(), lines.get(end - 1).end());
     }
 
-    private static Integer findMatchingClose(String text, List<Line> lines, int start, String name, String ty) {
+    private static Integer findMatchingClose(String text, List<Line> lines, int start, String name) {
         for (int idx = start; idx < lines.size(); idx += 1) {
             Control control = parseControlLine(lineText(text, lines.get(idx)), idx + 1);
             if (control != null && Objects.equals(control.kind(), "close") && Objects.equals(control.name(), name)) {
-                if (control.ty() != null && !Objects.equals(control.ty(), ty)) {
-                    throw new PmlError(idx + 1, PmlErrorKind.TYPE_MISMATCH, "", ty, control.ty());
-                }
                 return idx;
             }
         }
@@ -303,8 +296,8 @@ public final class Pml {
         }
 
         if (inner.startsWith("/")) {
-            NameAndOptionalType parsed = parseNameAndOptionalType(inner.substring(1), lineNo);
-            return new Control("close", parsed.name(), parsed.ty());
+            String name = parseClosingName(inner.substring(1), lineNo, line);
+            return new Control("close", name, null);
         }
 
         NameAndType parsed = parseNameAndRequiredType(inner, lineNo);
@@ -335,21 +328,17 @@ public final class Pml {
     private static NameAndType parseNameAndRequiredType(String input, int lineNo) {
         int split = input.indexOf(':');
         String name = split >= 0 ? input.substring(0, split) : input;
-        String ty = split >= 0 ? input.substring(split + 1) : "text";
+        String ty = split >= 0 ? input.substring(split + 1) : "";
         validateNameOrThrow(name, lineNo);
         return new NameAndType(name, normalizeType(ty, lineNo));
     }
 
-    private static NameAndOptionalType parseNameAndOptionalType(String input, int lineNo) {
-        int split = input.indexOf(':');
-        if (split >= 0) {
-            String name = input.substring(0, split);
-            String ty = input.substring(split + 1);
-            validateNameOrThrow(name, lineNo);
-            return new NameAndOptionalType(name, normalizeType(ty, lineNo));
+    private static String parseClosingName(String input, int lineNo, String line) {
+        if (input.indexOf(':') >= 0) {
+            throw new PmlError(lineNo, PmlErrorKind.INVALID_CONTROL_LINE, line);
         }
         validateNameOrThrow(input, lineNo);
-        return new NameAndOptionalType(input, null);
+        return input;
     }
 
     private static void validateNameOrThrow(String name, int lineNo) {
@@ -360,7 +349,7 @@ public final class Pml {
 
     private static String normalizeType(String ty, int lineNo) {
         if (ty.isEmpty()) {
-            throw new PmlError(lineNo, PmlErrorKind.INVALID_TYPE, ty);
+            return "";
         }
         for (int i = 0; i < ty.length(); i += 1) {
             if (!isTypeChar(ty.charAt(i))) {
@@ -656,7 +645,7 @@ public final class Pml {
                 String baseName = String.join(".", path);
                 String name = meta.tag() == null ? baseName : baseName + "#" + meta.tag();
                 validateNameOrThrow(name, 0);
-                String ty = normalizeType(meta.ty() == null ? "text" : meta.ty(), 0);
+                String ty = normalizeType(meta.ty() == null ? "" : meta.ty(), 0);
                 String content = normalizeNewlines(meta.content() == null ? "" : meta.content());
                 output.add(new CollectedBlock(
                     new PmlBlock(name, ty, content, false),

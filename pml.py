@@ -30,7 +30,6 @@ class PmlErrorKind(str, Enum):
     INVALID_NAME = "invalid_name"
     INVALID_TYPE = "invalid_type"
     STRAY_CLOSING_BLOCK = "stray_closing_block"
-    TYPE_MISMATCH = "type_mismatch"
     META_FIELD_CONFLICT = "meta_field_conflict"
     INVALID_TREE = "invalid_tree"
 
@@ -62,8 +61,6 @@ class PmlError(Exception):
             return f"line {self.line}: invalid block type `{self.detail}`"
         if self.kind == PmlErrorKind.STRAY_CLOSING_BLOCK:
             return f"line {self.line}: stray closing block `/{self.detail}`"
-        if self.kind == PmlErrorKind.TYPE_MISMATCH:
-            return f"line {self.line}: closing type `{self.found}` does not match opening type `{self.expected}`"
         if self.kind == PmlErrorKind.META_FIELD_CONFLICT:
             return f"line {self.line}: tree meta field conflicts with child key `{self.detail}`"
         if self.kind == PmlErrorKind.INVALID_TREE:
@@ -105,7 +102,7 @@ def parse_pml(text: str) -> List[PmlBlock]:
         if kind == "close":
             raise PmlError(i + 1, PmlErrorKind.STRAY_CLOSING_BLOCK, detail=name)
 
-        close_index = _find_matching_close(text, lines, i + 1, name, ty)
+        close_index = _find_matching_close(text, lines, i + 1, name)
         if close_index is not None:
             blocks.append(
                 PmlBlock(
@@ -185,7 +182,7 @@ class PmlBuilder:
     def _push_block(self, name: str, ty: Optional[str], content: str, paired: bool) -> "PmlBuilder":
         if not _is_valid_name(name):
             raise PmlError(0, PmlErrorKind.INVALID_NAME, detail=name)
-        normalized_type = _normalize_type("text" if ty is None else ty)
+        normalized_type = _normalize_type("" if ty is None else ty)
         self._blocks.append(
             PmlBlock(
                 name=name,
@@ -201,7 +198,7 @@ def render_blocks(blocks: List[PmlBlock]) -> str:
     parts: List[str] = []
     for block in blocks:
         header = f"[{block.name}"
-        if block.ty != "text":
+        if block.ty != "":
             header += f":{block.ty}"
         header += "]\n"
         parts.append(header)
@@ -239,16 +236,14 @@ def _content_between(text: str, lines: List[_Line], start: int, end: int) -> str
     return text[lines[start].start : lines[end - 1].end]
 
 
-def _find_matching_close(text: str, lines: List[_Line], start: int, name: str, ty: str) -> Optional[int]:
+def _find_matching_close(text: str, lines: List[_Line], start: int, name: str) -> Optional[int]:
     for idx in range(start, len(lines)):
         line = _line_text(text, lines[idx])
         control = _parse_control_line(line, idx + 1)
         if control is None:
             continue
-        kind, close_name, close_ty = control
+        kind, close_name, _close_ty = control
         if kind == "close" and close_name == name:
-            if close_ty is not None and close_ty != ty:
-                raise PmlError(idx + 1, PmlErrorKind.TYPE_MISMATCH, expected=ty, found=close_ty)
             return idx
     return None
 
@@ -273,8 +268,8 @@ def _parse_control_line(line: str, line_no: int) -> Optional[Tuple[str, str, Opt
         raise PmlError(line_no, PmlErrorKind.INVALID_CONTROL_LINE, detail=line)
 
     if inner.startswith("/"):
-        name, ty = _parse_name_and_optional_type(inner[1:], line_no)
-        return ("close", name, ty)
+        name = _parse_closing_name(inner[1:], line_no, line)
+        return ("close", name, None)
 
     name, ty = _parse_name_and_required_type(inner, line_no)
     return ("open", name, ty)
@@ -302,18 +297,16 @@ def _parse_name_and_required_type(value: str, line_no: int) -> Tuple[str, str]:
     if ":" in value:
         name, ty = value.split(":", 1)
     else:
-        name, ty = value, "text"
+        name, ty = value, ""
     _validate_name_or_raise(name, line_no)
     return name, _normalize_type(ty, line_no)
 
 
-def _parse_name_and_optional_type(value: str, line_no: int) -> Tuple[str, Optional[str]]:
+def _parse_closing_name(value: str, line_no: int, line: str) -> str:
     if ":" in value:
-        name, ty = value.split(":", 1)
-        _validate_name_or_raise(name, line_no)
-        return name, _normalize_type(ty, line_no)
+        raise PmlError(line_no, PmlErrorKind.INVALID_CONTROL_LINE, detail=line)
     _validate_name_or_raise(value, line_no)
-    return value, None
+    return value
 
 
 def _validate_name_or_raise(name: str, line_no: int) -> None:
@@ -322,7 +315,9 @@ def _validate_name_or_raise(name: str, line_no: int) -> None:
 
 
 def _normalize_type(value: str, line_no: int = 0) -> str:
-    if value == "" or not all(_is_type_char(ch) for ch in value):
+    if value == "":
+        return ""
+    if not all(_is_type_char(ch) for ch in value):
         raise PmlError(line_no, PmlErrorKind.INVALID_TYPE, detail=value)
     value = value.lower()
     return "markdown" if value == "md" else value
@@ -535,7 +530,7 @@ def _collect_blocks_from_object(
             tag = meta["tag"]
             name = f"{base_name}#{tag}" if tag is not None else base_name
             _validate_name_or_raise(name, 0)
-            ty = _normalize_type(meta["ty"] or "text")
+            ty = _normalize_type(meta["ty"] or "")
             content = _normalize_newlines(meta["content"] or "")
             collected.append(
                 _CollectedBlock(
